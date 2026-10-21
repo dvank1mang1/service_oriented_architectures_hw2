@@ -1,0 +1,530 @@
+openapi: 3.0.3
+info:
+  title: marketplace api
+  version: 1.0.0
+  description: >-
+    contract-first marketplace. money is a json number with at most two decimal places.
+    all business endpoints require a bearer access token. public registration creates USER only.
+    role and ownership checks are performed before business operations.
+servers:
+  - url: /
+security:
+  - bearerAuth: []
+tags:
+  - name: products
+  - name: orders
+  - name: auth
+  - name: promos
+  - name: system
+paths:
+  /health:
+    get:
+      tags: [system]
+      operationId: health
+      x-success-status: 200
+      security: []
+      responses:
+        default: {$ref: '#/components/responses/Unexpected'}
+        '200':
+          description: application and database are ready
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HealthResponse'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /auth/register:
+    post:
+      tags: [auth]
+      operationId: register
+      x-success-status: 201
+      security: []
+      description: public registration creates USER; seller and admin accounts use an operator command
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RegisterRequest'}
+      responses:
+        default: {$ref: '#/components/responses/Unexpected'}
+        '201':
+          description: user created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UserResponse'}
+        '400': {$ref: '#/components/responses/Validation'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      x-success-status: 200
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LoginRequest'}
+      responses:
+        default: {$ref: '#/components/responses/Unexpected'}
+        '200':
+          description: access and refresh tokens issued
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TokenResponse'}
+        '400': {$ref: '#/components/responses/Validation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /auth/refresh:
+    post:
+      tags: [auth]
+      operationId: refresh
+      x-success-status: 200
+      security: []
+      description: atomically consumes the old refresh token and returns a new token pair
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RefreshRequest'}
+      responses:
+        default: {$ref: '#/components/responses/Unexpected'}
+        '200':
+          description: rotated token pair
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TokenResponse'}
+        '400': {$ref: '#/components/responses/Validation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /products:
+    get:
+      tags: [products]
+      operationId: list_products
+      x-success-status: 200
+      description: USER, SELLER and ADMIN can read all products, including archived; stable ordering by id
+      parameters:
+        - {name: page, in: query, schema: {type: integer, minimum: 0, maximum: 1000000, default: 0}}
+        - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: status, in: query, schema: {$ref: '#/components/schemas/ProductStatus'}}
+        - {name: category, in: query, schema: {type: string, minLength: 1, maxLength: 100}}
+      responses:
+        default: {$ref: '#/components/responses/Unexpected'}
+        '200':
+          description: products filtered by status and exact case-sensitive category
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProductPage'}
+        '400': {$ref: '#/components/responses/Validation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+    post:
+      tags: [products]
+      operationId: create_product
+      x-success-status: 201
+      description: SELLER creates own products; ADMIN can set seller_id to an existing SELLER or ADMIN
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ProductCreate'}
+      responses:
+        default: {$ref: '#/components/responses/Unexpected'}
+        '201':
+          description: product created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProductResponse'}
+        '400': {$ref: '#/components/responses/Validation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /products/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [products]
+      operationId: get_product
+      x-success-status: 200
+      description: USER, SELLER and ADMIN can read any product
+      responses:
+        default: {$ref: '#/components/responses/Unexpected'}
+        '200':
+          description: product found
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProductResponse'}
+        '400': {$ref: '#/components/responses/Validation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [products]
+      operationId: update_product
+      x-success-status: 200
+      description: SELLER updates own products; ADMIN any product; stock means available units; available plus unpaid reserved stock must fit a signed 32-bit integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ProductUpdate'}
+      responses:
+        default: {$ref: '#/components/responses/Unexpected'}
+        '200':
+          description: full replacement of mutable fields; absent description clears it
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProductResponse'}
+        '400': {$ref: '#/components/responses/Validation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [products]
+      operationId: archive_product
+      x-success-status: 204
+      description: SELLER archives own products; ADMIN any product; repeated archive returns 204
+      responses:
+        default: {$ref: '#/components/responses/Unexpected'}
+        '204': {description: status is ARCHIVED; row remains in the database}
+        '400': {$ref: '#/components/responses/Validation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /orders:
+    post:
+      tags: [orders]
+      operationId: create_order
+      x-success-status: 201
+      description: USER and ADMIN create orders for themselves; checks rate limit before active order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OrderCreate'}
+      responses:
+        default: {$ref: '#/components/responses/Unexpected'}
+        '201':
+          description: order and reservations committed together
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrderResponse'}
+        '400': {$ref: '#/components/responses/Validation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/PromoError'}
+        '429': {$ref: '#/components/responses/RateLimit'}
+  /orders/{id}:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    get:
+      tags: [orders]
+      operationId: get_order
+      x-success-status: 200
+      description: USER reads own orders; ADMIN any; SELLER denied
+      responses:
+        default: {$ref: '#/components/responses/Unexpected'}
+        '200':
+          description: order with price snapshots
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrderResponse'}
+        '400': {$ref: '#/components/responses/Validation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      tags: [orders]
+      operationId: update_order
+      x-success-status: 200
+      description: >-
+        USER updates own CREATED order; ADMIN any CREATED order; SELLER denied.
+        existing products keep snapshot prices; new products use current prices.
+        an expired or inactive promo rejects the update; below-minimum total removes the promo.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OrderUpdate'}
+      responses:
+        default: {$ref: '#/components/responses/Unexpected'}
+        '200':
+          description: complete atomic replacement of items
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrderResponse'}
+        '400': {$ref: '#/components/responses/Validation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/PromoError'}
+        '429': {$ref: '#/components/responses/RateLimit'}
+  /orders/{id}/cancel:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [orders]
+      operationId: cancel_order
+      x-success-status: 200
+      description: USER cancels own order; ADMIN any; only CREATED or PAYMENT_PENDING; restores stock and promo use
+      responses:
+        default: {$ref: '#/components/responses/Unexpected'}
+        '200':
+          description: canceled; amounts and items retained for history
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrderResponse'}
+        '400': {$ref: '#/components/responses/Validation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /orders/{id}/status:
+    parameters:
+      - {$ref: '#/components/parameters/Id'}
+    post:
+      tags: [orders]
+      operationId: transition_order
+      x-success-status: 200
+      description: ADMIN only; CREATED to PAYMENT_PENDING to PAID to SHIPPED to COMPLETED; no payment provider is called
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OrderTransition'}
+      responses:
+        default: {$ref: '#/components/responses/Unexpected'}
+        '200':
+          description: next state applied
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OrderResponse'}
+        '400': {$ref: '#/components/responses/Validation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /promo-codes:
+    post:
+      tags: [promos]
+      operationId: create_promo
+      x-success-status: 201
+      description: SELLER and ADMIN create global promos; percentage discount is capped at 70 percent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PromoCreate'}
+      responses:
+        default: {$ref: '#/components/responses/Unexpected'}
+        '201':
+          description: promo created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PromoResponse'}
+        '400': {$ref: '#/components/responses/Validation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  parameters:
+    Id: {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+  responses:
+    Unexpected:
+      description: uniform error response for infrastructure failures, unknown routes or unsupported methods
+      headers:
+        X-Request-Id:
+          description: server-generated request identifier, included in every response
+          schema: {type: string, format: uuid}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    Validation:
+      description: VALIDATION_ERROR; details.fields contains field and message for each violation
+      content: &errorContent
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    Unauthorized:
+      description: TOKEN_INVALID, TOKEN_EXPIRED, REFRESH_TOKEN_INVALID or INVALID_CREDENTIALS
+      content: *errorContent
+    Forbidden:
+      description: ACCESS_DENIED for role or product ownership; ORDER_OWNERSHIP_VIOLATION for another user's order
+      content: *errorContent
+    NotFound:
+      description: PRODUCT_NOT_FOUND or ORDER_NOT_FOUND
+      content: *errorContent
+    Conflict:
+      description: PRODUCT_INACTIVE, INSUFFICIENT_STOCK, ORDER_HAS_ACTIVE, INVALID_STATE_TRANSITION, EMAIL_EXISTS or PROMO_CODE_EXISTS
+      content: *errorContent
+    PromoError:
+      description: PROMO_CODE_INVALID or PROMO_CODE_MIN_AMOUNT
+      content: *errorContent
+    RateLimit:
+      description: ORDER_LIMIT_EXCEEDED; only successful operations consume the configured interval
+      content: *errorContent
+    Unavailable:
+      description: SERVICE_UNAVAILABLE
+      content: *errorContent
+  schemas:
+    ProductStatus: {type: string, enum: [ACTIVE, INACTIVE, ARCHIVED]}
+    OrderStatus: {type: string, enum: [CREATED, PAYMENT_PENDING, PAID, SHIPPED, COMPLETED, CANCELED]}
+    Role: {type: string, enum: [USER, SELLER, ADMIN]}
+    DiscountType: {type: string, enum: [PERCENTAGE, FIXED_AMOUNT]}
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error_code, message]
+      properties:
+        error_code:
+          type: string
+          enum: [PRODUCT_NOT_FOUND, PRODUCT_INACTIVE, ORDER_NOT_FOUND, ORDER_LIMIT_EXCEEDED, ORDER_HAS_ACTIVE, INVALID_STATE_TRANSITION, INSUFFICIENT_STOCK, PROMO_CODE_INVALID, PROMO_CODE_MIN_AMOUNT, ORDER_OWNERSHIP_VIOLATION, VALIDATION_ERROR, TOKEN_EXPIRED, TOKEN_INVALID, REFRESH_TOKEN_INVALID, ACCESS_DENIED, INVALID_CREDENTIALS, EMAIL_EXISTS, PROMO_CODE_EXISTS, SERVICE_UNAVAILABLE, INTERNAL_ERROR, NOT_FOUND, METHOD_NOT_ALLOWED]
+        message: {type: string}
+        details: {type: object, additionalProperties: true, nullable: true}
+    ProductCreate:
+      type: object
+      additionalProperties: false
+      required: &productRequired [name, price, stock, category, status]
+      properties: &productFields
+        name: {type: string, minLength: 1, maxLength: 255}
+        description: {type: string, maxLength: 4000, nullable: true}
+        price: {type: number, format: decimal, minimum: 0.01, maximum: 9999999999.99, multipleOf: 0.01}
+        stock: {type: integer, minimum: 0, maximum: 2147483647}
+        category: {type: string, minLength: 1, maxLength: 100}
+        status: {$ref: '#/components/schemas/ProductStatus'}
+        seller_id: {type: string, format: uuid, nullable: true}
+    ProductUpdate:
+      type: object
+      additionalProperties: false
+      required: *productRequired
+      properties: *productFields
+    ProductResponse:
+      type: object
+      additionalProperties: false
+      required: [id, name, price, stock, category, status, seller_id, created_at, updated_at]
+      properties:
+        <<: *productFields
+        id: {type: string, format: uuid, readOnly: true}
+        seller_id: {type: string, format: uuid, readOnly: true}
+        created_at: {type: string, format: date-time, readOnly: true}
+        updated_at: {type: string, format: date-time, readOnly: true}
+    ProductPage:
+      type: object
+      additionalProperties: false
+      required: [items, totalElements, page, size]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/ProductResponse'}}
+        totalElements: {type: integer, minimum: 0}
+        page: {type: integer, minimum: 0}
+        size: {type: integer, minimum: 1, maximum: 100}
+    OrderItemInput:
+      type: object
+      description: product_id must be unique within the order items array
+      additionalProperties: false
+      required: [product_id, quantity]
+      properties:
+        product_id: {type: string, format: uuid}
+        quantity: {type: integer, minimum: 1, maximum: 999}
+    OrderCreate:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: &orderItems {type: array, minItems: 1, maxItems: 50, items: {$ref: '#/components/schemas/OrderItemInput'}}
+        promo_code: {type: string, pattern: '^[A-Z0-9_]{4,20}$', nullable: true}
+    OrderUpdate:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: *orderItems
+    OrderTransition:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: {$ref: '#/components/schemas/OrderStatus'}
+    OrderItemResponse:
+      type: object
+      additionalProperties: false
+      required: [id, product_id, quantity, price_at_order]
+      properties:
+        id: {type: string, format: uuid}
+        product_id: {type: string, format: uuid}
+        quantity: {type: integer, minimum: 1, maximum: 999}
+        price_at_order: {type: number, format: decimal, minimum: 0.01, multipleOf: 0.01}
+    OrderResponse:
+      type: object
+      additionalProperties: false
+      required: [id, user_id, status, items, total_amount, discount_amount, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        user_id: {type: string, format: uuid}
+        status: {$ref: '#/components/schemas/OrderStatus'}
+        promo_code_id: {type: string, format: uuid, nullable: true}
+        items: {type: array, minItems: 1, maxItems: 50, items: {$ref: '#/components/schemas/OrderItemResponse'}}
+        total_amount: {type: number, format: decimal, minimum: 0, maximum: 9999999999.99, multipleOf: 0.01}
+        discount_amount: {type: number, format: decimal, minimum: 0, maximum: 9999999999.99, multipleOf: 0.01}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    PromoCreate:
+      type: object
+      additionalProperties: false
+      required: [code, discount_type, discount_value, min_order_amount, max_uses, valid_from, valid_until, active]
+      properties: &promoFields
+        code: {type: string, pattern: '^[A-Z0-9_]{4,20}$'}
+        discount_type: {$ref: '#/components/schemas/DiscountType'}
+        discount_value: {type: number, format: decimal, minimum: 0.01, maximum: 9999999999.99, multipleOf: 0.01}
+        min_order_amount: {type: number, format: decimal, minimum: 0, maximum: 9999999999.99, multipleOf: 0.01}
+        max_uses: {type: integer, minimum: 1, maximum: 2147483647}
+        valid_from: {type: string, format: date-time}
+        valid_until: {type: string, format: date-time}
+        active: {type: boolean}
+    PromoResponse:
+      type: object
+      additionalProperties: false
+      required: [id, code, discount_type, discount_value, min_order_amount, max_uses, current_uses, valid_from, valid_until, active]
+      properties:
+        <<: *promoFields
+        id: {type: string, format: uuid}
+        current_uses: {type: integer, minimum: 0}
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email: &email {type: string, format: email, maxLength: 254}
+        password: {type: string, format: password, minLength: 8, maxLength: 128}
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email: *email
+        password: {type: string, format: password, minLength: 1, maxLength: 128}
+    RefreshRequest:
+      type: object
+      additionalProperties: false
+      required: [refresh_token]
+      properties:
+        refresh_token: {type: string, minLength: 1, maxLength: 4096}
+    TokenResponse:
+      type: object
+      additionalProperties: false
+      required: [access_token, refresh_token, token_type, expires_in]
+      properties:
+        access_token: {type: string}
+        refresh_token: {type: string}
+        token_type: {type: string, enum: [bearer]}
+        expires_in: {type: integer, minimum: 1}
+    UserResponse:
+      type: object
+      additionalProperties: false
+      required: [id, email, role]
+      properties:
+        id: {type: string, format: uuid}
+        email: *email
+        role: {$ref: '#/components/schemas/Role'}
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: {type: string, enum: [ok]}

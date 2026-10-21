@@ -1,0 +1,47 @@
+from __future__ import annotations
+from decimal import Decimal
+from pydantic import field_serializer
+import re
+{{#vendorExtensions.x-py-datetime-imports}}{{#-first}}from datetime import{{/-first}} {{{.}}}{{^-last}},{{/-last}}{{/vendorExtensions.x-py-datetime-imports}}
+{{#vendorExtensions.x-py-typing-imports}}{{#-first}}from typing import{{/-first}} {{{.}}}{{^-last}},{{/-last}}{{/vendorExtensions.x-py-typing-imports}}
+{{#vendorExtensions.x-py-pydantic-imports}}{{#-first}}from pydantic import{{/-first}} {{{.}}}{{^-last}},{{/-last}}{{/vendorExtensions.x-py-pydantic-imports}}
+{{#vendorExtensions.x-py-other-imports}}
+{{{.}}}
+{{/vendorExtensions.x-py-other-imports}}
+{{#vendorExtensions.x-py-model-imports}}
+{{{.}}}
+{{/vendorExtensions.x-py-model-imports}}
+
+class {{classname}}(BaseModel):
+{{#vars}}
+    {{name}}: {{#isNumber}}Annotated[Decimal, Field({{#minimum}}ge=Decimal("{{minimum}}"),{{/minimum}}{{#maximum}}le=Decimal("{{maximum}}"),{{/maximum}}{{#multipleOf}}multiple_of=Decimal("{{multipleOf}}"),{{/multipleOf}})]{{^required}} | None = None{{/required}}{{/isNumber}}{{^isNumber}}{{{vendorExtensions.x-py-typing}}}{{/isNumber}}
+{{/vars}}
+    model_config = {"populate_by_name": True, "extra": "forbid"}
+
+    @field_serializer("*", when_used="json")
+    def serialize_value(self, value):
+        return float(value) if isinstance(value, Decimal) else value
+{{#vars}}
+{{#vendorExtensions.x-regex}}
+
+    @field_validator('{{{name}}}')
+    @classmethod
+    def validate_{{{name}}}(cls, value):
+        if value is not None and not re.fullmatch(r"{{{.}}}", value):
+            raise ValueError("invalid format")
+        return value
+{{/vendorExtensions.x-regex}}
+{{#isEnum}}
+
+    @field_validator('{{{name}}}')
+    @classmethod
+    def enum_{{{name}}}(cls, value):
+        if value is not None and value not in ({{#allowableValues}}{{#enumVars}}{{{value}}},{{/enumVars}}{{/allowableValues}}):
+            raise ValueError("invalid enum value")
+        return value
+{{/isEnum}}
+{{/vars}}
+{{#vendorExtensions.x-py-postponed-model-imports}}
+{{{.}}}
+{{/vendorExtensions.x-py-postponed-model-imports}}
+{{classname}}.model_rebuild()

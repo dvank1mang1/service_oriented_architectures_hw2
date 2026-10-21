@@ -1,0 +1,27 @@
+from typing import Dict, List
+from fastapi import APIRouter, Body, Cookie, Header, Path, Query, Request, Response
+{{#imports}}
+{{import}}
+{{/imports}}
+from app import handlers
+
+router = APIRouter()
+
+{{#operations}}
+{{#operation}}
+@router.{{#lambda.lowercase}}{{httpMethod}}{{/lambda.lowercase}}(
+    "{{{path}}}",
+    status_code={{vendorExtensions.x-success-status}},
+    {{#returnType}}response_model={{returnType}},{{/returnType}}
+    tags=[{{#tags}}"{{name}}"{{^-last}},{{/-last}}{{/tags}}],
+)
+def {{operationId}}(
+    request: Request,
+    {{#allParams}}
+    {{>endpoint_argument_definition}},
+    {{/allParams}}
+):
+    return handlers.{{operationId}}(request=request{{#allParams}}, {{>impl_argument}}={{>impl_argument}}{{/allParams}})
+
+{{/operation}}
+{{/operations}}

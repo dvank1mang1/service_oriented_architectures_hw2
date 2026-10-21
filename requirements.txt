@@ -1,0 +1,10 @@
+fastapi==0.119.1
+uvicorn==0.38.0
+pydantic==2.12.3
+SQLAlchemy==2.0.44
+psycopg[binary]==3.2.12
+PyJWT==2.10.1
+argon2-cffi==25.1.0
+PyYAML==6.0.3
+openapi-schema-validator==0.6.3
+openapi-spec-validator==0.7.2

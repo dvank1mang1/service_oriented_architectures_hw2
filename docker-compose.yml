@@ -1,0 +1,50 @@
+name: marketplace-hw2
+
+services:
+  db:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_DB: marketplace
+      POSTGRES_USER: marketplace
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?run make setup first}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U marketplace -d marketplace"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  migrate:
+    image: redgate/flyway:11.14.1
+    platform: linux/amd64
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      FLYWAY_URL: jdbc:postgresql://db:5432/marketplace
+      FLYWAY_USER: marketplace
+      FLYWAY_PASSWORD: ${DB_PASSWORD:?run make setup first}
+      FLYWAY_CONNECT_RETRIES: "20"
+    volumes:
+      - ./db/migrations:/flyway/sql:ro
+    command: migrate
+  api:
+    build:
+      context: .
+      target: app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql+psycopg://marketplace:${DB_PASSWORD}@db:5432/marketplace
+      JWT_SECRET: ${JWT_SECRET:?run make setup first}
+      ORDER_INTERVAL_MINUTES: ${ORDER_INTERVAL_MINUTES:-1}
+      ACCESS_TOKEN_MINUTES: "20"
+      REFRESH_TOKEN_DAYS: "14"
+    ports:
+      - "127.0.0.1:${APP_PORT:-8081}:8080"
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

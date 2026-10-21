@@ -1,0 +1,52 @@
+name: marketplace-hw2-test
+
+services:
+  db:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_DB: marketplace_test
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test-only-password
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U test -d marketplace_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  migrate:
+    image: redgate/flyway:11.14.1
+    platform: linux/amd64
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      FLYWAY_URL: jdbc:postgresql://db:5432/marketplace_test
+      FLYWAY_USER: test
+      FLYWAY_PASSWORD: test-only-password
+      FLYWAY_CONNECT_RETRIES: "20"
+    volumes:
+      - ./db/migrations:/flyway/sql:ro
+    command: migrate
+  api:
+    build:
+      context: .
+      target: app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment: &testEnvironment
+      DATABASE_URL: postgresql+psycopg://test:test-only-password@db:5432/marketplace_test
+      JWT_SECRET: test-only-signing-secret-at-least-thirty-two-bytes
+      ORDER_INTERVAL_MINUTES: "1"
+  tests:
+    build:
+      context: .
+      target: test
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      <<: *testEnvironment
+      BASE_URL: http://api:8080
+    profiles: [test]
