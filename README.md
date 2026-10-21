@@ -273,8 +273,6 @@ show actual database rows, not only http responses:
 docker compose exec -T db psql -U marketplace -d marketplace < docs/defense.sql
 ```
 
-follow [the defense checklist](docs/defense.md) for failure cases and explanations.
-
 ## requirement map
 
 | point | implementation |
